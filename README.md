@@ -8,7 +8,7 @@ No external registers, all state is memory-mapped.
 Memory Map
 ----------
 ```
-0x0000 - 0x0007    System        PC (2), SELECTOR (2), Reserved (4)
+0x0000 - 0x0007    System        PC (2), SELECTOR (2), RSP (2), Reserved (2)
 0x0008 - 0x0027    Slots 0–15    16 × 16-bit words (32 bytes)
 0x0028 - 0x00FF    Return Stack  216 bytes (108 slots, grows upward)
 0x0100 - 0x01FF    Syscall       256 bytes (stdio, decoupled buffer)
@@ -104,4 +104,4 @@ SEL and LD work together as a two-step load:
     LD  0x1234  ; write 0x1234 into slot 5
 
 The selector (I) persists across instructions until the next SEL.  
-No STORE opcode yet, stores go through slot manipulation.  
+No STORE opcode yet, stores go through slot manipulation.
