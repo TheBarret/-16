@@ -31,6 +31,7 @@ class VM:
     # Memory map
     PC_ADDR      = 0x0000   # program counter     (2 bytes)
     SELECTOR     = 0x0002   # slot selector       (2 bytes)
+    RSP_ADDR     = 0x0004   # return stack pointer (2 bytes)
     SLOT_BASE    = 0x0008   # slot[0]–slot[15]    (32 bytes)
     STACK_BASE   = 0x0028   # return stack        (grows up)
     STACK_LIMIT  = 0x0100   # return stack ceiling
@@ -51,10 +52,12 @@ class VM:
     FN = 1   # Negative
 
     def __init__(self):
+        # Allocate
         self.mem = [0] * self.MEM_SIZE
-        self.rsp = self.STACK_BASE
+        #self.rsp = self.STACK_BASE
         self._w16(self.PC_ADDR, self.PROGRAM_BASE)
         self._w16(self.SELECTOR,  0)
+        self._w16(self.RSP_ADDR,  self.STACK_BASE)
         for n in range(self.NUM_SLOTS):
             self._sw(n, 0)
 
@@ -104,16 +107,18 @@ class VM:
     # ── Call | Return Stack Operations ──────────────────────────────────────────────────────────
 
     def _rpush(self, v: int):
-        if self.rsp >= self.STACK_LIMIT:
+        rsp = self._r16(self.RSP_ADDR)
+        if rsp >= self.STACK_LIMIT:
             raise MachineError(Err.STACK_OVER, "Return stack overflow")
-        self._w16(self.rsp, v)
-        self.rsp += 2
+        self._w16(rsp, v)
+        self._w16(self.RSP_ADDR, rsp + 2)
 
     def _rpop(self) -> int:
-        if self.rsp <= self.STACK_BASE:
+        rsp = self._r16(self.RSP_ADDR)
+        if rsp <= self.STACK_BASE:
             raise MachineError(Err.STACK_UNDER, "Return stack underflow")
-        self.rsp -= 2
-        return self._r16(self.rsp)
+        self._w16(self.RSP_ADDR, rsp - 2)
+        return self._r16(rsp - 2)
 
     # ── Opcodes Operations ───────────────────────────────────────────────────────────────
 
@@ -290,7 +295,7 @@ class VM:
 
     def dump(self):
         labels = {0:"A", 1:"B", 2:"R", 3:"REM", 5:"JT", 15:"FLAGS"}
-        print(f"  PC={hex(self._r16(self.PC_ADDR))}  I={self._r16(self.SELECTOR)}  RSP={hex(self.rsp)}")
+        print(f"  PC={hex(self._r16(self.PC_ADDR))}  I={self._r16(self.SELECTOR)}  RSP={hex(self._r16(self.RSP_ADDR))}")
         for n in range(self.NUM_SLOTS):
             v   = self._sr(n)
             tag = f"[{labels[n]}]" if n in labels else ""
@@ -366,6 +371,7 @@ def test_shift_flag():
     result = vm._sr(2)
     neg = vm._flag(VM.FN)
     print(f"operation: 0x8000 >> 1 = {result:#06x}  N={neg}  ({'PASS' if result == 0x4000 and not neg else 'FAIL'})")
+    vm.dump()
 
 
 # --- Entrypoint --------------------------------------------------------------------
