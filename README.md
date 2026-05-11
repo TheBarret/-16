@@ -57,9 +57,8 @@ Fixed 32-bit, little-endian:
 
 ```
 Byte 0    Byte 1    Byte 2–3
-opcode    reserved  param (16-bit LE)
+opcode    subset  param (16-bit LE)
 ```
-
 
 Opcode Table
 ------------
