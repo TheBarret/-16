@@ -38,7 +38,7 @@ Some slots have hard-wired roles for general purpose operations:
 |------|--------|-------------------------------------------|
 | 0    | A      | ALU, SHIFT / left operand                 |
 | 1    | B      | ALU, SHIFT / right operand / shift params |
-| 2    | R      | ALU / SHIFT result                        |
+| 2    | R      | ALU / SHIFT / SCRATCH -> result           |
 | 3    | REM    | DIV remainder                             |
 | 4    |        | General purpose                           |
 | 5    | JT     | JMP destination                           |
