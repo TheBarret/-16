@@ -4,6 +4,8 @@
 A 16-bit VM where everything lives inside a flat 64KB memory array.  
 No external registers, all state is memory-mapped.  
 
+<img width="1408" height="768" alt="drhwagdrhwagdrhw" src="https://github.com/user-attachments/assets/25e81972-2706-4d33-9714-779fee5ebb82" />
+
 
 Memory Map
 ----------
