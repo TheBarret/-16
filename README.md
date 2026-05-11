@@ -42,13 +42,13 @@ Flags (Slot 15)
 | 0   | Z    | Zero                 |
 | 1   | N    | Negative (signed)    |
 
-Bits 2–15 reserved.
+*Bits 2–15 reserved.*
 
-`Z` and `N` used by: 
-  - ADD, SUB, MUL, DIV, AND
-  - OR, XOR, NOT, NEG
-  - SHF, CMP
-  - JMP, IFEQ, IFNE, IFGT, IFLT
+Flags `Z` and `N` are used by: 
+- ADD, SUB, MUL, DIV
+- AND, OR, XOR, NOT, NEG
+- SHF, CMP
+- JMP, IFEQ, IFNE, IFGT, IFLT
 
 
 Instruction Format
