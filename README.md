@@ -1,266 +1,257 @@
-μ16, Pocket-size 16-bit Virtual Machine
-========================================
+# μ16: A Pocket-Sized 16-Bit Virtual Machine
 
-Key features:
-- Flat 64KB memory array, little-endian  
-- No external registers; all state is memory-mapped  
-- 16-slot register file with persistent `SELECTOR`-based writes
-- Dual upward-growing stacks (return + scope) with `SCRATCH` cross-frame convention
-- Fixed 32-bit instruction encoding (opcode, subset, param)
-- Descriptor table gateway for typed/structured memory regions
-- `R` (slot 2) as computational fixed point; `B` (slot 1) as polymorphic operand/control
-- Host-driven I/O flags polled via `CHK` + conditional skips
+μ16 is a **minimalist, memory-mapped 16-bit virtual machine** designed for experimentation.  
+A low-level computing concepts in a constrained, self-contained environment.  
 
-Memory Map
-----------
-```
-0x0000 - 0x0007    System          PC (2), SELECTOR (2), RSP (2), SCRATCH (2)
-0x0008 - 0x0027    Slots 0–15      16 × 16-bit words (32 bytes)
-0x0028 - 0x00FF    Return Stack    216 bytes (grows upward)
-0x0100 - 0x017F    Descriptor Table 64 × 16-bit pointers (128 bytes)
-0x0180 - 0x01FF    Scope Stack     SSP (2) + 126 bytes data (grows upward)
-0x0200 - 0xFFFF    Program         Code + inline .byte data (65024 bytes)
-```
+---
 
-<img width="1408" height="768" src="https://github.com/user-attachments/assets/196d4c22-d444-40a9-ba51-3df642bc332e" />
+## **Core Philosophy**
 
-System Region
--------------
-All values stored little-endian.  
-Word access requires 16-bit aligned addresses.
+μ16 is built around a few key ideas:
 
-| Address | Size | Label    | Description              |
-|---------|------|----------|--------------------------|
-| 0x0000  | 2    | PC       | Program counter          |
-| 0x0002  | 2    | SELECTOR | Slot selector (I)        |
-| 0x0004  | 2    | RSP      | Return stack pointer     |
-| 0x0006  | 2    | SCRATCH  | Unscoped cross-frame word|
+- **Flat, unified memory**: All state (registers, stacks, flags) lives in a single 64KB little-endian address space.
+- **Memory-mapped everything**: No external registers; even the program counter and stack pointers are just memory locations.
+- **Fixed-point computation**: Slot 2 (`R`) is the central hub for all arithmetic, logic, and data movement.
+- **Polymorphic operands**: Slot 1 (`B`) pulls double duty as an ALU operand *or* a shift control word.
+- **Host-driven I/O**: The VM doesn’t handle I/O directly—it polls flags set by the host (e.g., `RX`, `TX`, `ERR`).
 
-Slots
------
-16 general-purpose 16-bit words at fixed addresses.  
+---
 
-Hard-wired roles:
+## **Memory Map**
 
-| Slot | Label  | Role                                                         |
-|------|--------|--------------------------------------------------------------|
-| 0    | A      | ALU left operand / Descriptor byte offset                    |
-| 1    | B      | ALU right operand **or** SHF control word (polymorphic)      |
-| 2    | R      | ALU result / SHF operand / LDB/LDW dest / STB/STW src        |
-| 3    | REM    | DIV remainder                                                |
-| 4    |        | General purpose                                              |
-| 5    | JT     | JMP / CALL destination address                               |
-| 6-14 |        | General purpose                                              |
-| 15   | FLAGS  | Global flags (see below)                                     |
+The 64KB address space is divided into fixed regions:
 
-Global Flags (Slot 15)
-----------------------
-| Bit | Name | Set by            | Description              |
-|-----|------|-------------------|--------------------------|
-| 0   | Z    | ALU / CMP / CHK / SHF | Zero                 |
-| 1   | N    | ALU / CMP / CHK / SHF | Negative (signed)    |
-| 2   | RX   | Host              | Input data waiting       |
-| 3   | TX   | Host              | Output channel ready     |
-| 4   | ERR  | Host              | Device error             |
-| 5-15|      |                   | Reserved                 |
 
-**Z and N** are set by:  
-`ADD, SUB, MUL, DIV, AND, OR, XOR, NOT, NEG, SHF, CMP, CHK`  
-*(Descriptor I/O ops do not modify flags.)*
+| Address Range   | Size      | Purpose              | Notes                                    |
+| --------------- | --------- | -------------------- | ---------------------------------------- |
+| `0x0000–0x0007` | 8 bytes   | **System State**     | PC, SELECTOR, RSP, SCRATCH               |
+| `0x0008–0x0027` | 32 bytes  | **Slot File**        | 16 × 16-bit general-purpose registers    |
+| `0x0028–0x00FF` | 216 bytes | **Return Stack**     | Grows upward; stores return addresses    |
+| `0x0100–0x017F` | 128 bytes | **Descriptor Table** | 64 × 16-bit pointers to data regions     |
+| `0x0180–0x01FF` | 128 bytes | **Scope Stack**      | Grows upward; saves/restores slot values |
+| `0x0200–0xFFFF` | ~64KB     | **Program + Data**   | Code and inline `.byte` regions          |
 
-**Z and N** are read by:  
-`IFEQ, IFNE, IFGT, IFLT`
 
-**RX, TX, ERR**  
-Set by the host to signal I/O state changes.  
-The VM reads them via `CHK` using bitmask immediates.
+---
 
-Slot Selection Model
---------------------
-`SEL` and `LD` work together as a two-step immediate load:
+## **System Region (`0x0000–0x0007`)**
+
+All values are **little-endian**. Word accesses require 16-bit alignment.
+
+
+| Address | Size | Label    | Description                   |
+| ------- | ---- | -------- | ----------------------------- |
+| 0x0000  | 2    | PC       | Program counter               |
+| 0x0002  | 2    | SELECTOR | Active slot index (for `LD`)  |
+| 0x0004  | 2    | RSP      | Return stack pointer          |
+| 0x0006  | 2    | SCRATCH  | Cross-frame temporary storage |
+
+
+---
+
+## **Slots (`0x0008–0x0027`)**
+
+16 general-purpose 16-bit registers with **hard-wired roles**:
+
+
+| Slot | Label | Role                                                      |
+| ---- | ----- | --------------------------------------------------------- |
+| 0    | A     | ALU left operand / Descriptor byte offset                 |
+| 1    | B     | ALU right operand **or** shift control word (polymorphic) |
+| 2    | R     | ALU result / Shift operand / Load/Store value             |
+| 3    | REM   | Division remainder                                        |
+| 4    | —     | General-purpose                                           |
+| 5    | JT    | Jump/CALL target address                                  |
+| 6–14 | —     | General-purpose                                           |
+| 15   | FLAGS | Global status flags (see below)                           |
+
+
+---
+
+### **Global Flags (Slot 15)**
+
+Flags are set by ALU ops (`ADD`, `SUB`, `CMP`, etc.) or the host (`RX`, `TX`, `ERR`).
+
+
+| Bit  | Name | Set By          | Description            |
+| ---- | ---- | --------------- | ---------------------- |
+| 0    | Z    | ALU/CMP/CHK/SHF | Zero flag              |
+| 1    | N    | ALU/CMP/CHK/SHF | Negative (signed) flag |
+| 2    | RX   | Host            | Input data available   |
+| 3    | TX   | Host            | Output channel ready   |
+| 4    | ERR  | Host            | Device error           |
+| 5–15 | —    | —               | Reserved               |
+
+
+**Usage:**
+
+- `Z` and `N` are read by conditional jumps (`IFEQ`, `IFNE`, `IFGT`, `IFLT`).
+- `RX`, `TX`, `ERR` are polled via `CHK` (e.g., `CHK 0x04` to test `RX`).
+
+---
+
+## **Slot Selection Model**
+
+Slots are accessed via a **persistent selector** (`SELECTOR` at `0x0002`).  
+Example:
+
 ```asm
-    SEL 5       ; point selector at slot 5
-    LD  0x1234  ; write 0x1234 into slot 5
-```
-The selector (`I`) persists across instructions until the next `SEL`.
-
-Descriptor Table & Memory I/O
------------------------------
-
-A 64-entry pointer table at `0x0100–0x017F` that gates access to structured memory regions.  
-Expected structures: buffers, lookup tables, sprite sheets, I/O rings, etc.  
-
-- Each entry is a 16-bit LE address. `0x0000` = unused/null (traps on access).
-- `A` (slot 0) acts as the **byte offset** into the targeted region.
-- `R` (slot 2) is the **value register** for loads/stores.
-- The `subset` byte controls automatic offset modification:
-
-| Subset | Mode         | Behavior                              |
-|--------|--------------|---------------------------------------|
-| 0x00   | None         | Offset unchanged                      |
-| 0x01   | Post-increment | `A ← A + step` after access         |
-| 0x02   | Post-decrement | `A ← A - step` after access         |
-| 0x03   | Pre-increment  | `A ← A + step` before access        |
-
-*Step = 1 for byte ops, 2 for word ops. Word ops trap on unaligned effective addresses.*
-
-**Format**
-```asm
-.byte  <n> <values>    ;→ explicit data, n bytes filled
-.byte? <n>             ;→ empty buffer, n bytes zeroed
+SEL 5    ; Point selector at slot 5
+LD  0x1234 ; Write 0x1234 into slot 5
 ```
 
-**Examples**
-```asm
-; Initialized
-:message    .byte n, <bytes>    ; content: char data, n-length
-:font       .byte 64, <bytes>   ; content: pixel data, 8x8     (PLANNED FEATURE)
-:sprite     .byte 256, <bytes>  ; content: pixel data, 16x16 (PLANNED FEATURE)
+The selector persists until the next `SEL`.
 
-; Uninitialized
-:stdin_buf  .byte? 64           ; stdio read buffer
-:stdout_buf .byte? 64           ; stdio write buffer
-:work_area  .byte? 256          ; general purpose
-```
+---
+
+## **Descriptor Table (`0x0100–0x017F`)**
+
+A **64-entry pointer table** for structured memory regions (buffers, lookup tables, etc.).
+
+- Each entry is a 16-bit LE address (`0x0000` = null/trap).
+- **Slot 0 (`A`)** = byte offset into the region.
+- **Slot 2 (`R`)** = value register for loads/stores.
+- **Subset byte** controls auto-increment/decrement of `A`:
+  - `0x00`: No offset change
+  - `0x01`: Post-increment (`A += step`)
+  - `0x02`: Post-decrement (`A -= step`)
+  - `0x03`: Pre-increment (`A += step` before access)
+
+**Step size:** 1 for byte ops, 2 for word ops (word ops trap on unaligned addresses).
+
+### **Memory Directives**
+
 ```asm
-    SEL 0          ; A = offset register
-    LD  0x0000     ; start at offset 0
-    SEL 2          ; R = value register
+; Initialized data
+:message  .byte 10, "Hello"    ; 10-byte string
+:buffer   .byte 64, <bytes>   ; Pre-filled buffer
+
+; Uninitialized (zeroed)
+:stdin    .byte? 64           ; Input buffer
+:work     .byte? 256          ; Scratch space
+```
+
+### **Example: Iterating Over a Buffer**
+
+```asm
+SEL 0       ; A = offset register
+LD  0       ; Start at offset 0
+SEL 2       ; R = value register
 .loop:
-    LDB 0x01, 5    ; load byte from desc[5], post-inc A by 1
+    LDB 0x01, 5  ; Load byte from desc[5], post-inc A by 1
     ; ... process R ...
-    CMP A, LIMIT   ; check bounds
+    CMP A, LIMIT
     IFLT / JMP .loop
 ```
 
-Scope Stack (STASH / UNSTASH)
-------------------------------
-A LIFO stack for saving/restoring slot values across `CALL` boundaries.  
-Lives at `0x0180–0x01FF` (`SSP` at `0x0180`, data grows upward from `0x0182`).
-```asm
-    STASH n     ; push slot[n] onto scope stack
-    UNSTASH n   ; pop top of scope stack into slot[n]
-```
-`SSP` moves in 2-byte steps. No bounds checking; overflow silently corrupts program space at `0x0200` (by design for bare-metal/embedded use).
+---
 
-**Calling Convention:**
-- Caller `STASH`es slots it wants to preserve, `CALL`s, then `UNSTASH`es after `RET`.
-- Callee must balance its own `STASH/UNSTASH` pairs before `RET`.
-- Callee must not `UNSTASH` values it did not `STASH` in the same frame.
-- `SSP` must return to its entry position on `RET`.
+## **Scope Stack (`0x0180–0x01FF`)**
 
-SCRATCH (0x0006)
-----------------
-A single 16-bit word outside the slot file. Immune to `STASH/UNSTASH`.  
-Used for passing values across call frames.
-```asm
-    RDS         ; R (slot 2) ← SCRATCH
-    WRS         ; SCRATCH ← R (slot 2)
-```
-Any frame can read/write `SCRATCH`.  
-Convention: callee writes result to `SCRATCH` before `RET`; caller reads after `CALL`.
+A **LIFO stack** for saving/restoring slot values across function calls.
 
-Instruction Format
-------------------
-Fixed 32-bit, little-endian:
-```
-Byte 0    Byte 1    Byte 2–3
-opcode    subset    param (16-bit LE)
-```
+- `**SSP**` (Scope Stack Pointer) starts at `0x0180`; data grows upward.
+- **No bounds checking** (overflow corrupts program space at `0x0200`—intentional for bare-metal use).
 
-Opcode Table
-------------
-| Opcode | Subset | Mnemonic | Operands / Routing              | Description                                  |
-|--------|--------|----------|---------------------------------|----------------------------------------------|
-| 0x00   |        | NOP      |                                 | No operation                                 |
-| 0x01   |        | ADD      | A, B → R                        | Addition                                     |
-| 0x02   |        | SUB      | A, B → R                        | Subtraction                                  |
-| 0x03   |        | MUL      | A, B → R                        | Multiplication (low 16 bits)                 |
-| 0x04   |        | DIV      | A, B → R, REM                   | Division (quotient→R, remainder→slot 3)      |
-| 0x05   |        | AND      | A, B → R                        | Bitwise AND                                  |
-| 0x06   |        | OR       | A, B → R                        | Bitwise OR                                   |
-| 0x07   |        | XOR      | A, B → R                        | Bitwise XOR                                  |
-| 0x08   |        | NOT      | A → R                           | Bitwise NOT                                  |
-| 0x09   |        | NEG      | A → R                           | Two's complement negation                    |
-| 0x0A   |        | SHF      | R, B → R                        | Shift R by control word in B                 |
-| 0x0C   | 0x00   | CMP      | A, B → FLAGS                    | Compare (A − B), sets Z and N                |
-| 0x0C   | 0x01   | CHK      | mask → Z                        | Test flags: Z=1 if (FLAGS & mask) == mask    |
-| 0x10   |        | SEL      | param → I                       | Set slot selector                            |
-| 0x11   |        | LD       | param → slot[I]                 | Load immediate into selected slot            |
-| 0x12   |        | STASH    | slot[n] → stack                 | Push slot to scope stack                     |
-| 0x13   |        | UNSTASH  | stack → slot[n]                 | Pop scope stack into slot                    |
-| 0x14   |        | RDS      | SCRATCH → R                     | Read scratch into R                          |
-| 0x15   |        | WRS      | R → SCRATCH                     | Write R to scratch                           |
-| 0x20   |        | JMP      | JT → PC                         | Jump to address in slot 5                    |
-| 0x21   |        | IFEQ     |                                 | Skip next if Z = 1                           |
-| 0x22   |        | IFNE     |                                 | Skip next if Z = 0                           |
-| 0x23   |        | IFGT     |                                 | Skip next if N=0 and Z=0 (signed >)          |
-| 0x24   |        | IFLT     |                                 | Skip next if N = 1 (signed <)                |
-| 0x30   |        | CALL     |                                 | Push PC, then JMP                            |
-| 0x31   |        | RET      |                                 | Pop PC from return stack                     |
-| 0x40   | 0x00-03| LDB      | desc[n], A→offset, R←val        | Load byte (zero-extended)                    |
-| 0x41   | 0x00-03| LDW      | desc[n], A→offset, R←val        | Load word (aligned)                          |
-| 0x42   | 0x00-03| STB      | desc[n], A→offset, R→val        | Store byte                                   |
-| 0x43   | 0x00-03| STW      | desc[n], A→offset, R→val        | Store word (aligned)                         |
-| 0xFF   |        | HALT     |                                 | Stop execution                               |
+### **Calling Convention**
 
-CHK Instruction
----------------
-Subset `0x01` of `CMP` (opcode `0x0C`).  
-Tests whether all bits specified by the mask are set in slot 15 (`FLAGS`).
-```asm
-    CHK  mask    ; Z = 1 if (FLAGS & mask) == mask
-```
-The mask is a 16-bit immediate in the param field.
-
-Polling example:
-```asm
-:rx_mask  .byte 2 0x04, 0x00    ; RX flag (bit 2)
-
-.wait:
-    CHK  rx_mask
-    IFEQ / JMP .wait            ; loop until RX set
-    ; read input...
-```
-
-Shift Control Word
-------------------
-`SHF` reads its **operand from `R` (slot 2)** and its **control word from `B` (slot 1)**.  
-This enables direct `ALU → SHF` chaining without slot shuffling.
-
-Control word layout (slot 1):
-| Bits | Field     | Description                       |
-|------|-----------|-----------------------------------|
-| 0–3  | Amount    | Shift steps (0–15)                |
-| 4    | Direction | 0 = left, 1 = right               |
-| 5–15 |           | Ignored (masked internally)       |
+- **Caller**: `STASH` slots to preserve → `CALL` → `UNSTASH` after `RET`.
+- **Callee**: Must balance its own `STASH/UNSTASH` pairs.
+- `**SCRATCH` (`0x0006`)**: Immune to `STASH/UNSTASH`; used for cross-frame values.
+  - Convention: Callee writes result to `SCRATCH` before `RET`; caller reads it after `CALL`.
 
 ```asm
-:ctrl  .byte 2 0x03, 0x00   ; left shift by 3
-
-    ADD          ; R = A + B
-    SEL 1        ; target B
-    LD  ctrl     ; load control word
-    SHF          ; R = R << 3 (direct chain)
-```
-*Note: If `B` is not reloaded between ALU and SHF, the lower bits of the ALU operand become the shift amount. This enables compact data-dependent transforms (common in ARX ciphers & DSP scaling).*
-
-Architectural Model
--------------------
-μ16 is a **parameterized state machine** with a single computational throughput node:
-
-```
-δ : State × Instr → State
-State = (PC, I, RSP, SSP, SCR, S[0..15], F[Z,N], M[0..65535])
+STASH 2    ; Save R
+CALL func
+UNSTASH 2  ; Restore R
+RDS        ; R ← SCRATCH (result from func)
 ```
 
-- **`R` (slot 2)** is the fixed point: all ALU results, shift outputs, descriptor loads, and scratch reads converge here.
-- **`B` (slot 1)** is polymorphic: full 16-bit math operand for ALU, 5-bit control word for SHF.
-- **`FLAGS`** are the only branching observables. `Z/N` derive from `R`; `RX/TX/ERR` are host-injected.
-- **Descriptor Table** gates untyped `.byte` regions. Type semantics live at the assembler/host layer.
-- **Hot path**: `A,B → ALU → R → SHF → R → FLAGS → branch`. Stacks, scratch, and descriptors orbit this core.
+---
 
-Compact notation:
-> **μ16** = `δ(PC, I, S, F, M | opc, sub, param)`  
-> where `δ` routes `(S[0], S[1], S[2])` through opcode-selected transforms, updates `F[Z,N]` from `S[2]`, and advances `PC ← PC+4`.  
-> `S[1]` is polymorphic, `S[2]` is the computational fixed point, and branching observes only `F[Z,N]`.
+## **Instruction Format**
+
+All instructions are **32-bit little-endian**:
+
+```
+Byte 0: Opcode
+Byte 1: Subset (modes for some ops)
+Bytes 2–3: 16-bit parameter (LE)
+```
+
+---
+
+## **Opcode Summary**
+
+
+| Opcode    | Mnemonic            | Operands/Behavior                    | Description                               |
+| --------- | ------------------- | ------------------------------------ | ----------------------------------------- |
+| 0x00      | NOP                 | —                                    | No operation                              |
+| 0x01      | ADD                 | A, B → R                             | Addition                                  |
+| 0x02      | SUB                 | A, B → R                             | Subtraction                               |
+| 0x03      | MUL                 | A, B → R                             | Multiply (low 16 bits)                    |
+| 0x04      | DIV                 | A, B → R (quotient), REM (remainder) | Division                                  |
+| 0x05–0x07 | AND/OR/XOR          | A, B → R                             | Bitwise ops                               |
+| 0x08      | NOT                 | A → R                                | Bitwise NOT                               |
+| 0x09      | NEG                 | A → R                                | Two’s complement                          |
+| 0x0A      | SHF                 | R, B → R                             | Shift R by control word in B              |
+| 0x0C      | CMP                 | A, B → FLAGS[Z,N]                    | Compare (A - B)                           |
+| 0x0C      | CHK                 | mask → Z                             | Test flags: Z=1 if (FLAGS & mask) == mask |
+| 0x10      | SEL                 | param → SELECTOR                     | Set slot selector                         |
+| 0x11      | LD                  | param → slot[SELECTOR]               | Load immediate into selected slot         |
+| 0x12      | STASH               | slot[n] → scope stack                | Push slot to scope stack                  |
+| 0x13      | UNSTASH             | scope stack → slot[n]                | Pop scope stack into slot                 |
+| 0x14      | RDS                 | SCRATCH → R                          | Read SCRATCH into R                       |
+| 0x15      | WRS                 | R → SCRATCH                          | Write R to SCRATCH                        |
+| 0x20      | JMP                 | JT → PC                              | Jump to address in slot 5                 |
+| 0x21–0x24 | IFEQ/IFNE/IFGT/IFLT | —                                    | Conditional skips (based on Z/N)          |
+| 0x30      | CALL                | —                                    | Push PC, jump to JT                       |
+| 0x31      | RET                 | —                                    | Pop PC from return stack                  |
+| 0x40–0x43 | LDB/LDW/STB/STW     | desc[n], A→offset, R↔val             | Load/store byte/word via descriptor       |
+| 0xFF      | HALT                | —                                    | Stop execution                            |
+
+
+---
+
+### **Shift Control Word (Slot 1)**
+
+For `SHF`, slot 1 (`B`) acts as a **control word**:
+
+
+| Bits | Field     | Description         |
+| ---- | --------- | ------------------- |
+| 0–3  | Amount    | Shift steps (0–15)  |
+| 4    | Direction | 0 = left, 1 = right |
+| 5–15 | —         | Ignored             |
+
+
+**Example: Chaining ALU → SHF**
+
+```asm
+ADD      ; R = A + B
+SEL 1    ; Target B
+LD ctrl  ; Load shift control word (e.g., 0x03 = left by 3)
+SHF      ; R = R << 3
+```
+
+---
+
+## **Architectural Model**
+
+μ16 is a **parameterized state machine**:
+
+```
+δ : State × Instruction → State
+State = (PC, SELECTOR, RSP, SSP, SCRATCH, Slots[0..15], FLAGS[Z,N,RX,TX,ERR], Memory[0..65535])
+```
+
+- **Fixed point**: Slot 2 (`R`) is the central register for computation, shifts, and data movement.
+- **Polymorphic operand**: Slot 1 (`B`) is either an ALU operand or a shift control word.
+- **Branching**: Only `Z` and `N` flags (from `R`) are used for conditional jumps.
+- **Hot path**: `A,B → ALU → R → SHF → R → FLAGS → branch`.
+
+**Compact notation:**
+
+> μ16 = `δ(PC, I, S, F, M | opcode, subset, param)`  
+> where `δ` routes `(S[0], S[1], S[2])` through opcode-selected transforms, updates `F[Z,N]` from `S[2]`, and advances `PC ← PC+4`.
+
