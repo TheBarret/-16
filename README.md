@@ -1,6 +1,7 @@
 # μ16: A Pocket-Sized 16-Bit Virtual Machine
 
-μ16 is a **minimalist, memory-mapped 16-bit virtual machine** designed for experimentation, learning, and fun. It’s not a product—it’s a playground for exploring low-level computing concepts in a constrained, self-contained environment.
+μ16 is a **minimalist, memory-mapped 16-bit virtual machine** designed for experimentation.  
+A low-level computing concepts in a constrained, self-contained environment.  
 
 ---
 
