@@ -130,20 +130,6 @@ A **64-entry pointer table** for structured memory regions (buffers, lookup tabl
 :stdin    .byte? 64           ; Input buffer
 :work     .byte? 256          ; Scratch space
 ```
-
-### **Example: Iterating Over a Buffer**
-
-```asm
-SEL 0       ; A = offset register
-LD  0       ; Start at offset 0
-SEL 2       ; R = value register
-.loop:
-    LDB 0x01, 5  ; Load byte from desc[5], post-inc A by 1
-    ; ... process R ...
-    CMP A, LIMIT
-    IFLT / JMP .loop
-```
-
 ---
 
 ## **Scope Stack (`0x0180–0x01FF`)**
