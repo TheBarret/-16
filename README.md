@@ -1,7 +1,6 @@
 # μ16: A Pocket-Sized 16-Bit Virtual Machine
 
-μ16 is a **minimalist, memory-mapped 16-bit virtual machine** designed for experimentation.  
-A low-level computing concepts in a constrained, self-contained environment.  
+μ16 is a **minimalist, memory-mapped 16-bit virtual machine** designed for experimentation, learning, and fun. It’s not a product—it’s a playground for exploring low-level computing concepts in a constrained, self-contained environment.
 
 ---
 
@@ -130,6 +129,20 @@ A **64-entry pointer table** for structured memory regions (buffers, lookup tabl
 :stdin    .byte? 64           ; Input buffer
 :work     .byte? 256          ; Scratch space
 ```
+
+### **Example: Iterating Over a Buffer**
+
+```asm
+SEL 0       ; A = offset register
+LD  0       ; Start at offset 0
+SEL 2       ; R = value register
+.loop:
+    LDB 0x01, 5  ; Load byte from desc[5], post-inc A by 1
+    ; ... process R ...
+    CMP A, LIMIT
+    IFLT / JMP .loop
+```
+
 ---
 
 ## **Scope Stack (`0x0180–0x01FF`)**
@@ -222,6 +235,88 @@ SHF      ; R = R << 3
 
 ---
 
+## Common Examples
+
+**Loops**
+```asm
+SEL 0       ; A = counter
+LD  10      ; Initialize counter to 10
+.loop:
+    ; ... loop body ...
+    SUB A, 1 ; Decrement counter (A = A - 1)
+    SEL 0
+    LD  1     ; Load 1 into A (for CMP)
+    CMP 0, A  ; Compare A with 0
+    IFGT / JMP .loop ; Repeat if A > 0
+```
+
+**Function (call)**
+```asm
+; Caller
+STASH 0    ; Save A
+STASH 1    ; Save B
+STASH 2    ; Save R
+LD  0x100  ; Load argument into JT (slot 5)
+CALL func
+UNSTASH 2  ; Restore R
+UNSTASH 1  ; Restore B
+UNSTASH 0  ; Restore A
+RDS        ; R ← SCRATCH (return value)
+
+; Callee (func)
+STASH 2    ; Save R (if needed)
+; ... compute result in R ...
+WRS        ; SCRATCH ← R (return value)
+UNSTASH 2  ; Restore R
+RET
+```
+
+**Copy Memory (memcpy)**
+```asm
+; Copy 64 bytes from desc[0] to desc[1]
+SEL 0       ; A = offset
+LD  0       ; Start at 0
+SEL 2       ; R = value
+.loop:
+    LDB 0x01, 0  ; Load byte from desc[0], post-inc A
+    STB 0x01, 1  ; Store byte to desc[1], post-inc A
+    CMP A, 64
+    IFLT / JMP .loop
+```
+
+**Conditionals**
+```asm
+; If A > B, then R = A - B
+CMP 0, 1    ; Compare A and B
+IFGT / JMP .then
+JMP .else
+.then:
+    SUB 0, 1 ; R = A - B
+    JMP .end
+.else:
+    ; ..logic..
+.end:
+```
+
+**Program: Sum of Array**
+```asm
+; Sum 10 words from desc[0], result in SCRATCH
+SEL 0       ; A = offset
+LD  0       ; Start at 0
+SEL 2       ; R = accumulator (initially 0)
+LD  0
+SEL 0       ; A = offset
+LD  0       ; Reset offset to 0
+.loop:
+    LDW 0x01, 0  ; Load word from desc[0], post-inc A by 2
+    ADD 2, R     ; R = R + loaded word
+    SEL 0
+    CMP A, 20    ; 10 words * 2 bytes = 20
+    IFLT / JMP .loop
+WRS         ; SCRATCH ← R (result)
+HALT
+```
+
 ## **Architectural Model**
 
 μ16 is a **parameterized state machine**:
@@ -240,4 +335,3 @@ State = (PC, SELECTOR, RSP, SSP, SCRATCH, Slots[0..15], FLAGS[Z,N,RX,TX,ERR], Me
 
 > μ16 = `δ(PC, I, S, F, M | opcode, subset, param)`  
 > where `δ` routes `(S[0], S[1], S[2])` through opcode-selected transforms, updates `F[Z,N]` from `S[2]`, and advances `PC ← PC+4`.
-
