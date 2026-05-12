@@ -101,21 +101,72 @@ def test_neg():
 
 # ── Shift Group ───────────────────────────────────────────────────────────────
 
+#def test_shift_left():
+#    vm, w = make_tester()
+#    r, z, n = _run_alu_binary(vm, w, 0x0A, 0x0005, 0x0003)  # left 3
+#    print(f"  SHF  0x0005 << 3 = {r:#06x}  ({'PASS' if r == 0x0028 else 'FAIL'})")
+
+#def test_shift_right():
+#    vm, w = make_tester()
+#    r, z, n = _run_alu_binary(vm, w, 0x0A, 0x00F0, 0x0014)  # right 4
+#    print(f"  SHF  0x00F0 >> 4 = {r:#06x}  ({'PASS' if r == 0x000F else 'FAIL'})")
+
+#def test_shift_flag_n():
+#    vm, w = make_tester()
+#    r, z, n = _run_alu_binary(vm, w, 0x0A, 0x8000, 0x0011)  # right 1
+#    print(f"  SHF  0x8000 >> 1 = {r:#06x}  N={n}  ({'PASS' if r == 0x4000 and not n else 'FAIL'})")
 def test_shift_left():
     vm, w = make_tester()
-    r, z, n = _run_alu_binary(vm, w, 0x0A, 0x0005, 0x0003)  # left 3
+    # Write directly to slots using VM methods
+    vm._sw(2, 0x0005)   # R = value to shift
+    vm._sw(1, 0x0003)   # B = control (amount=3, dir=left)
+
+    # Write a proper 4-byte instruction at PC
+    pc = vm._r16(vm.PC_ADDR)
+    vm.mem[pc]     = 0x0A   # SHF opcode
+    vm.mem[pc + 1] = 0x00   # subset (unused)
+    vm.mem[pc + 2] = 0x00   # param lo
+    vm.mem[pc + 3] = 0x00   # param hi
+    vm.mem[pc + 4] = 0xFF   # HALT after
+
+    vm.step()
+    r = vm._sr(2)
+    z = vm._flag(vm.FZ)
+    n = vm._flag(vm.FN)
     print(f"  SHF  0x0005 << 3 = {r:#06x}  ({'PASS' if r == 0x0028 else 'FAIL'})")
 
 def test_shift_right():
     vm, w = make_tester()
-    r, z, n = _run_alu_binary(vm, w, 0x0A, 0x00F0, 0x0014)  # right 4
+    vm._sw(2, 0x00F0)   # R = value
+    vm._sw(1, 0x0014)   # B = amount=4, dir=right
+
+    pc = vm._r16(vm.PC_ADDR)
+    vm.mem[pc]     = 0x0A
+    vm.mem[pc + 1] = 0x00
+    vm.mem[pc + 2] = 0x00
+    vm.mem[pc + 3] = 0x00
+    vm.mem[pc + 4] = 0xFF
+
+    vm.step()
+    r = vm._sr(2)
     print(f"  SHF  0x00F0 >> 4 = {r:#06x}  ({'PASS' if r == 0x000F else 'FAIL'})")
 
 def test_shift_flag_n():
     vm, w = make_tester()
-    r, z, n = _run_alu_binary(vm, w, 0x0A, 0x8000, 0x0011)  # right 1
-    print(f"  SHF  0x8000 >> 1 = {r:#06x}  N={n}  ({'PASS' if r == 0x4000 and not n else 'FAIL'})")
+    vm._sw(2, 0x8000)   # R = value
+    vm._sw(1, 0x0011)   # B = amount=1, dir=right
 
+    pc = vm._r16(vm.PC_ADDR)
+    vm.mem[pc]     = 0x0A
+    vm.mem[pc + 1] = 0x00
+    vm.mem[pc + 2] = 0x00
+    vm.mem[pc + 3] = 0x00
+    vm.mem[pc + 4] = 0xFF
+
+    vm.step()
+    r = vm._sr(2)
+    n = vm._flag(vm.FN)
+    print(f"  SHF  0x8000 >> 1 = {r:#06x}  N={n}  ({'PASS' if r == 0x4000 and not n else 'FAIL'})")
 
 # ── Compare Group ─────────────────────────────────────────────────────────────
 
@@ -458,59 +509,64 @@ def test_neg_0X8000():
 
 # --- Entrypoint --------------------------------------------------------------------
 if __name__ == "__main__":
-    print("── ALU ──")
-    test_add()
-    test_add_zero()
-    test_add_overflow()
-    test_sub()
-    test_sub_negative()
-    test_mul()
-    test_div()
 
-    print("\n── Logic ──")
-    test_and()
-    test_or()
-    test_xor()
-    test_not()
-    test_neg()
+    try:
+        print("── ALU ──")
+        test_add()
+        test_add_zero()
+        test_add_overflow()
+        test_sub()
+        test_sub_negative()
+        test_mul()
+        test_div()
 
-    print("\n── Shift ──")
-    test_shift_left()
-    test_shift_right()
-    test_shift_flag_n()
+        print("\n── Logic ──")
+        test_and()
+        test_or()
+        test_xor()
+        test_not()
+        test_neg()
 
-    print("\n── Compare ──")
-    test_cmp_eq()
-    test_cmp_gt()
-    test_cmp_lt()
+        print("\n── Shift ──")
+        test_shift_left()
+        test_shift_right()
+        test_shift_flag_n()
 
-    print("\n── Flow Control ──")
-    test_jmp()
-    test_call_ret()
-    test_call_nested()
+        print("\n── Compare ──")
+        test_cmp_eq()
+        test_cmp_gt()
+        test_cmp_lt()
 
-    print("\n── Conditionals ──")
-    test_ifeq_skip()
-    test_ifne_noskip()
-    test_ifgt()
-    test_iflt()
-    test_ifeq_noskip()
-    test_ifne_noskip()
+        print("\n── Flow Control ──")
+        test_jmp()
+        test_call_ret()
+        test_call_nested()
 
-    print("\n── Nested STASH/UNSTASH ──")
-    test_stash_unstash_nested()
+        print("\n── Conditionals ──")
+        test_ifeq_skip()
+        test_ifne_noskip()
+        test_ifgt()
+        test_iflt()
+        test_ifeq_noskip()
+        test_ifne_noskip()
 
-    print("\n── SCRATCH ──")
-    test_scratch()
+        print("\n── Nested STASH/UNSTASH ──")
+        test_stash_unstash_nested()
 
-    print("\n── CHK Flags ──")
-    test_chk_match()
-    test_chk_partial()
+        print("\n── SCRATCH ──")
+        test_scratch()
 
-    print("\n── Predictable errors ──")
-    test_div_zero()
-    test_slot_oob()
-    test_stack_under()
-    test_addr_align()
-    test_flag_persistence()
-    test_neg_0X8000()
+        print("\n── CHK Flags ──")
+        test_chk_match()
+        test_chk_partial()
+
+        print("\n── Predictable errors ──")
+        test_div_zero()
+        test_slot_oob()
+        test_stack_under()
+        test_addr_align()
+        test_flag_persistence()
+        test_neg_0X8000()
+
+    except Exception as e:
+        print(f"error caught: {e}")
