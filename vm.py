@@ -5,7 +5,6 @@ from enum import Enum, auto
 
 """
 
-
 # ── Errors ────────────────────────────────────────────────────────────────────
 
 class Err(Enum):
@@ -27,9 +26,6 @@ class MachineError(Exception):
 # ── VM ────────────────────────────────────────────────────────────────────────
 
 class VM:
-
-
-
     # Memory map
     PC_ADDR      = 0x0000   # program counter     (2 bytes)
     SELECTOR     = 0x0002   # slot selector       (2 bytes)
@@ -250,10 +246,21 @@ class VM:
         self._w16(self.PC_ADDR, addr)
 
     # -----------------------------------------------------------
+    # Updated with alternative subset CHK <mask>
+    # Compares param (mask) against all flags, stores result in Z
+    def op_CMP(self, subset, param):
+        if subset == 0x00:
+            self._flags((self._sr(0) - self._sr(1)) & 0xFFFF)
+        elif subset == 0x01:
+            flags = self._sr(self.FLAG_SLOT)
+            match = (flags & param) == param
+            self._setf(self.FZ, match)
+            self._setf(self.FN, False)
 
-    def op_CMP(self):
-        """Compare slot[0] − slot[1], update flags, discard result."""
-        self._flags((self._sr(0) - self._sr(1)) & 0xFFFF)
+    # Obsolete:
+    #def op_CMP(self):
+    #    """Compare slot[0] − slot[1], update flags, discard result."""
+    #    self._flags((self._sr(0) - self._sr(1)) & 0xFFFF)
 
     def _skip(self):
         """Advance PC by one instruction (skip next 4 bytes)."""
@@ -290,17 +297,18 @@ class VM:
 
     # ── Fetch / Execute ───────────────────────────────────────────────────────
 
-    def fetch(self) -> tuple[int, int]:
+    def fetch(self) -> tuple[int, int, int]:
         pc = self._r16(self.PC_ADDR)
         if pc % 2 != 0:
             raise MachineError(Err.ADDR_ALIGN, f"PC {hex(pc)} not aligned")
         opcode = self._r8(pc)
+        subset = self._r8(pc + 1)
         param  = self._r16(pc + 2)
         self._w16(self.PC_ADDR, pc + 4)
-        return opcode, param
+        return opcode, subset, param
 
     def step(self) -> bool:
-        opcode, param = self.fetch()
+        opcode, subset, param = self.fetch()
         match opcode:
             case 0x00: pass                    # NOP
             # ALU
@@ -314,9 +322,8 @@ class VM:
             case 0x08: self.op_NOT()
             case 0x09: self.op_NEG()
             case 0x0A: self.op_SHF()
-            #case 0x0B: unused
             # Comparator
-            case 0x0C: self.op_CMP()
+            case 0x0C: self.op_CMP(subset, param)   # passes subset + mask
             # Movement
             case 0x10: self.op_SEL(param)
             case 0x11: self.op_LD(param)
@@ -357,7 +364,7 @@ class VM:
 
     def dump(self):
         labels = {0:"A", 1:"B", 2:"R", 3:"REM", 5:"JT", 15:"FLAGS"}
-        #print(f"  PC={hex(self._r16(self.PC_ADDR))}  I={self._r16(self.SELECTOR)}  RSP={hex(self._r16(self.RSP_ADDR))}")
+        print(80 * "*")
         print(f"  PC={hex(self._r16(self.PC_ADDR))}  I={self._r16(self.SELECTOR)}  RSP={hex(self._r16(self.RSP_ADDR))}  SSP={hex(self._r16(self.SSP_ADDR))}  SCRATCH={self._r16(self.SCRATCH_ADDR):#06x}")
         for n in range(self.NUM_SLOTS):
             v   = self._sr(n)
