@@ -112,9 +112,7 @@ class VM:
 
     def _spush(self, v: int):
         ssp = self._r16(self.SSP_ADDR)
-        # Has no bounds check,
-        # silent overflow per retro spec
-        # TODO!
+        # TODO: do bounds check here!
         self._w16(ssp, v)
         self._w16(self.SSP_ADDR, ssp + 2)
 
@@ -189,16 +187,16 @@ class VM:
 
     # -----------------------------------------------------------
     # Shift Controller:
-    #  Slot      : 1
+    #  Slot      : 2 (R)
     #  bits 0-3  : shift amount (0-15)
     #  bit  4    : direction (0=left, 1=right)
     #  bits 5-15 : unused (return mask planned)
 
     def op_SHF(self):
-        a = self._sr(0)
-        control = self._sr(1)
-        amount = control & 0xF
-        right = (control >> 4) & 0x1
+        a = self._sr(2) # READ R
+        control = self._sr(1) # READ CTL BITS
+        amount = control & 0xF # nibble step value
+        right = (control >> 4) & 0x1 # nibble direction value
 
 
         if amount == 0:
@@ -246,21 +244,18 @@ class VM:
         self._w16(self.PC_ADDR, addr)
 
     # -----------------------------------------------------------
-    # Updated with alternative subset CHK <mask>
-    # Compares param (mask) against all flags, stores result in Z
+    # Compare operations
+
     def op_CMP(self, subset, param):
         if subset == 0x00:
+            # CMP: OPERANDS -> FLAGS
             self._flags((self._sr(0) - self._sr(1)) & 0xFFFF)
         elif subset == 0x01:
+            # CHK <MASK>: MASK -> FLAGS -> Z
             flags = self._sr(self.FLAG_SLOT)
             match = (flags & param) == param
             self._setf(self.FZ, match)
             self._setf(self.FN, False)
-
-    # Obsolete:
-    #def op_CMP(self):
-    #    """Compare slot[0] − slot[1], update flags, discard result."""
-    #    self._flags((self._sr(0) - self._sr(1)) & 0xFFFF)
 
     def _skip(self):
         """Advance PC by one instruction (skip next 4 bytes)."""
