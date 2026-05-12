@@ -214,9 +214,9 @@ Descriptor Table [0x0100 - 0x017F]
 **Examples**
 ```asm
 ; Initialized
-:message    .byte n, <bytes>   ; content: char data, n-length
-:font       .byte 16, <bytes>   ; content: pixel data, 8x8
-:sprite     .byte 32, <bytes>   ; content: pixel data, 16x16
+:message    .byte n, <bytes>    ; content: char data, n-length
+:font       .byte 64, <bytes>   ; content: pixel data, 8x8
+:sprite     .byte 256, <bytes>  ; content: pixel data, 16x16
 
 ; Uninitialized
 :stdin_buf  .byte? 64           ; stdio read buffer
