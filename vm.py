@@ -1,7 +1,7 @@
 from enum import Enum, auto
 
 """
-    μ16 — Minimal 16-bit Virtual Machine
+    μ16, Minimal 16-bit Virtual Machine
 
 """
 
@@ -84,6 +84,93 @@ class VM:
         self.mem[addr]     = v & 0xFF
         self.mem[addr + 1] = (v >> 8) & 0xFF
 
+    # ── Descriptor Table Operations ─────────────────────────────────────────────────────────────────
+    # - Capacity: 64 entries
+    # - Pointer: 2 bytes each
+    # - State: 0x0000 means unused
+    # - Read logic: word at 0x0100 + n*2
+
+    # Descriptors:
+    # 0x0100    desc[0].addr_lo
+    # 0x0101    desc[0].addr_hi
+    # 0x0102    desc[1].addr_lo
+    # 0x0103    desc[1].addr_hi
+    # ...
+    # 0x017E    desc[63].addr_lo
+    # 0x017F    desc[63].addr_hi
+
+    # Descriptor symbols:
+    # .byte  <n> <values...>    → explicit data, n bytes filled
+    # .byte? <n>                → empty buffer, n bytes zeroed
+
+    # Capacitance
+    # Empty containers for I/O buffers work the same way:
+    # :stdin_buf  .byte? 64       ; stdio read buffer
+    # :stdout_buf .byte? 64       ; stdio write buffer
+    # :work_area  .byte? 256      ; general purpose
+
+    # Descriptor Address Lookup
+    def _desc_addr(self, n: int) -> int:
+        """Return the absolute address stored in descriptor n.
+        Traps if index out of range or descriptor is 0x0000 (unused)."""
+        if n < 0 or n >= 64:
+            raise MachineError(Err.SLOT_OOB, f"Descriptor {n} out of range")
+        addr = self._r16(0x0100 + n * 2)
+        if addr == 0:
+            raise MachineError(Err.ADDR_OOB, f"Descriptor {n} is null")
+        return addr
+
+
+    # Each takes a descriptor index n (0–63) and uses slot 0 (A) as the byte offset into that container.
+    # Slot 2 (R) is the value, the subset byte controls offset modification.
+    # The VM._chk guard in LDW/STW will trap on unaligned addresses (addr % 2 != 0).
+    # That's correct behavior, word access requires alignment.
+    # But it means if you LDW at offset 1, it'll fault,
+    # it needs to be word accesses aligned at assembler time.
+
+    def op_LDB(self, subset, n):
+        if subset == 0x03:  # pre-increment
+            self._sw(0, (self._sr(0) + 1) & 0xFFFF)
+        addr = self._desc_addr(n) + self._sr(0)
+        self._sw(2, self._r8(addr))          # zero-extended byte → R
+        self._sset_omod(subset, 0, 1)        # post-inc/dec
+
+    def op_LDW(self, subset, n):
+        if subset == 0x03:
+            self._sw(0, (self._sr(0) + 2) & 0xFFFF)
+        addr = self._desc_addr(n) + self._sr(0)
+        self._chk(addr, 2)                   # alignment guard
+        self._sw(2, self._r16(addr))
+        self._sset_omod(subset, 0, 2)
+
+    def op_STB(self, subset, n):
+        if subset == 0x03:
+            self._sw(0, (self._sr(0) + 1) & 0xFFFF)
+        addr = self._desc_addr(n) + self._sr(0)
+        self._w8(addr, self._sr(2) & 0xFF)
+        self._sset_omod(subset, 0, 1)
+
+    def op_STW(self, subset, n):
+        if subset == 0x03:
+            self._sw(0, (self._sr(0) + 2) & 0xFFFF)
+        addr = self._desc_addr(n) + self._sr(0)
+        self._chk(addr, 2)
+        self._w16(addr, self._sr(2))
+        self._sset_omod(subset, 0, 2)
+
+    # Subset Offset Modes
+    def _sset_omod(self, subset, slot_n, step):
+        """Apply post-increment or post-decrement to slot_n.
+        subset 0x00: no change
+        subset 0x01: post-increment by step
+        subset 0x02: post-decrement by step
+        subset 0x03: already handled as pre-increment by caller"""
+        if subset == 0x01:
+            self._sw(slot_n, (self._sr(slot_n) + step) & 0xFFFF)
+        elif subset == 0x02:
+            self._sw(slot_n, (self._sr(slot_n) - step) & 0xFFFF)
+        # Note: 0x00, 0x03: no operation, or derrived
+
     # ── Slot Operations ─────────────────────────────────────────────────────────────────
 
     def _sa(self, n: int) -> int:
@@ -148,7 +235,7 @@ class VM:
     def op_LD(self, param):
         self._sw(self._r16(self.SELECTOR), param & 0xFFFF)
 
-    # -----------------------------------------------------------
+    # ALU Primitive Operations -----------------------------------------------------------
     def op_ADD(self):
         a, b = self._sr(0), self._sr(1)
         r = (a + b) & 0xFFFF;  self._sw(2, r);  self._flags(r)
@@ -169,7 +256,7 @@ class VM:
         self._sw(3, (a %  b) & 0xFFFF)   # remainder → slot[3]
         self._flags((a // b) & 0xFFFF)
 
-    # -----------------------------------------------------------
+    # ALU Logic Operations -----------------------------------------------------------
     def op_AND(self):
         r = self._sr(0) & self._sr(1);  self._sw(2, r);  self._flags(r)
 
@@ -185,19 +272,18 @@ class VM:
     def op_NEG(self):
         r = (-self._sr(0)) & 0xFFFF;    self._sw(2, r);  self._flags(r)
 
-    # -----------------------------------------------------------
-    # Shift Controller:
+    # Bit Shifting Operations -----------------------------------------------------------
+    # Control:
     #  Slot      : 2 (R)
     #  bits 0-3  : shift amount (0-15)
     #  bit  4    : direction (0=left, 1=right)
     #  bits 5-15 : unused (return mask planned)
 
     def op_SHF(self):
-        a = self._sr(2) # READ R
-        control = self._sr(1) # READ CTL BITS
-        amount = control & 0xF # nibble step value
+        a = self._sr(2)              # READ R
+        control = self._sr(1)        # READ CTL BITS
+        amount = control & 0xF       # nibble step value
         right = (control >> 4) & 0x1 # nibble direction value
-
 
         if amount == 0:
             r = a
@@ -209,30 +295,31 @@ class VM:
         self._sw(2, r)
         self._flags(r)
 
-    # -----------------------------------------------------------
-    # STASH FEATURE
+    # Stack Scope | Scratch Operations -----------------------------------------------------------
+    # Leverage:
     # - Backup slotted data, stack based, 126 bytes, 63 words
     # - Scratch field is an unscoped word, 2 bytes
+    # - Must be correctly unwind in paired cycles
 
-    # STASH <slot> — push slot[n] to scope stack
+    # STASH <slot>, push slot[n] to scope stack
     def op_STASH(self, param):
         n = param & 0xF
         if n >= self.NUM_SLOTS:
             raise MachineError(Err.SLOT_OOB, f"STASH slot {n}")
         self._spush(self._sr(n))
 
-    # UNSTASH <slot> — pop scope stack into slot[n]
+    # UNSTASH <slot>, pop scope stack into slot[n]
     def op_UNSTASH(self, param):
         n = param & 0xF
         if n >= self.NUM_SLOTS:
             raise MachineError(Err.SLOT_OOB, f"UNSTASH slot {n}")
         self._sw(n, self._spop())
 
-    # RDS — copy SCRATCH into R (slot 2)
+    # RDS, copy SCRATCH into R (slot 2)
     def op_RDS(self):
         self._sw(2, self._r16(self.SCRATCH_ADDR))
 
-    # WRS — copy R (slot 2) into SCRATCH
+    # WRS, copy R (slot 2) into SCRATCH
     def op_WRS(self):
         self._w16(self.SCRATCH_ADDR, self._sr(2))
 
@@ -337,6 +424,11 @@ class VM:
             # Call/Ret
             case 0x30: self.op_CALL()
             case 0x31: self.op_RET()
+            # Descriptor Memory Operations
+            case 0x40: self.op_LDB(subset, param)
+            case 0x41: self.op_LDW(subset, param)
+            case 0x42: self.op_STB(subset, param)
+            case 0x43: self.op_STW(subset, param)
             # Exit
             case 0xFF: return self.op_HALT()
             case _:
@@ -359,9 +451,9 @@ class VM:
 
     def dump(self):
         labels = {0:"A", 1:"B", 2:"R", 3:"REM", 5:"JT", 15:"FLAGS"}
-        print(80 * "*")
         print(f"  PC={hex(self._r16(self.PC_ADDR))}  I={self._r16(self.SELECTOR)}  RSP={hex(self._r16(self.RSP_ADDR))}  SSP={hex(self._r16(self.SSP_ADDR))}  SCRATCH={self._r16(self.SCRATCH_ADDR):#06x}")
         for n in range(self.NUM_SLOTS):
             v   = self._sr(n)
             tag = f"[{labels[n]}]" if n in labels else ""
             print(f"  slot[{n:02d}] {tag:<7} = {v:#06x}  ({v})")
+        print(80 * "*")
