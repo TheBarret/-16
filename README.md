@@ -86,7 +86,9 @@ The selector (`I`) persists across instructions until the next `SEL`.
 
 Descriptor Table & Memory I/O
 -----------------------------
-A 64-entry pointer table at `0x0100–0x017F` that gates access to structured memory regions (buffers, lookup tables, sprite sheets, I/O rings, etc.).
+
+A 64-entry pointer table at `0x0100–0x017F` that gates access to structured memory regions.  
+Expected structures: buffers, lookup tables, sprite sheets, I/O rings, etc.  
 
 - Each entry is a 16-bit LE address. `0x0000` = unused/null (traps on access).
 - `A` (slot 0) acts as the **byte offset** into the targeted region.
@@ -102,7 +104,24 @@ A 64-entry pointer table at `0x0100–0x017F` that gates access to structured me
 
 *Step = 1 for byte ops, 2 for word ops. Word ops trap on unaligned effective addresses.*
 
-Example: streaming bytes from a descriptor buffer
+**Format**
+```asm
+.byte  <n> <values>    ;→ explicit data, n bytes filled
+.byte? <n>             ;→ empty buffer, n bytes zeroed
+```
+
+**Examples**
+```asm
+; Initialized
+:message    .byte n, <bytes>    ; content: char data, n-length
+:font       .byte 64, <bytes>   ; content: pixel data, 8x8     (PLANNED FEATURE)
+:sprite     .byte 256, <bytes>  ; content: pixel data, 16x16 (PLANNED FEATURE)
+
+; Uninitialized
+:stdin_buf  .byte? 64           ; stdio read buffer
+:stdout_buf .byte? 64           ; stdio write buffer
+:work_area  .byte? 256          ; general purpose
+```
 ```asm
     SEL 0          ; A = offset register
     LD  0x0000     ; start at offset 0
@@ -184,45 +203,6 @@ Opcode Table
 | 0x42   | 0x00-03| STB      | desc[n], A→offset, R→val        | Store byte                                   |
 | 0x43   | 0x00-03| STW      | desc[n], A→offset, R→val        | Store word (aligned)                         |
 | 0xFF   |        | HALT     |                                 | Stop execution                               |
-
-Descriptor Table [0x0100 - 0x017F]
-------------------------------------
-
-**Key features**
-- Capacity: 64 entries
-- Pointer: 2 bytes each
-- State: `0x0000` means unused
-- Read logic: word at `0x0100 + n*2`
-
-**Descriptor Mapping**
-```asm
-0x0100    desc[0].addr_lo
-0x0101    desc[0].addr_hi
-0x0102    desc[1].addr_lo
-0x0103    desc[1].addr_hi
-  ...
-0x017E    desc[63].addr_lo
-0x017F    desc[63].addr_hi
-```
-
-**Format**
-```asm
-.byte  <n> <values>    ;→ explicit data, n bytes filled
-.byte? <n>             ;→ empty buffer, n bytes zeroed
-```
-
-**Examples**
-```asm
-; Initialized
-:message    .byte n, <bytes>    ; content: char data, n-length
-:font       .byte 64, <bytes>   ; content: pixel data, 8x8     (PLANNED FEATURE)
-:sprite     .byte 256, <bytes>  ; content: pixel data, 16x16 (PLANNED FEATURE)
-
-; Uninitialized
-:stdin_buf  .byte? 64           ; stdio read buffer
-:stdout_buf .byte? 64           ; stdio write buffer
-:work_area  .byte? 256          ; general purpose
-```
 
 CHK Instruction
 ---------------
