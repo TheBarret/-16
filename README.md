@@ -2,10 +2,13 @@
 ========================================
 
 Key features:
-- Flat 64KB memory array  
-- Little-endian  
-- No external registers  
-- All state is memory-mapped  
+- Flat 64KB memory array, little-endian  
+- No external registers, all state is memory-mapped  
+- 16-slot register file with persistent `SELECTOR`-based writes
+- Dual upward stacks (return + scope) with `SCRATCH` cross-frame convention
+- Fixed 32-bit instruction encoding
+- ALU/Flag behavior, CHK masking, and shift control format
+- Calling conventions and host-driven I/O flags
 
 Memory Map
 ----------
@@ -97,11 +100,10 @@ The stack pointer (SSP) moves in 2-byte steps.
 No bounds checking, overflow silently corrupts program space at `0x0200`.  
 
 **Calling Convention:**
-- Caller STASH'es slots it wants to preserve, CALLs, then UNSTASH'es them after RET.
-- Callee must balance its own STASH / UNSTASH pairs before RET.
-- Callee must not UNSTASH values it did not STASH in the same frame.
-- SSP must be at the same position on RET as it was on entry to the callee.
-
+- Caller `STASH` slots it wants to preserve, `CALL`s, then `UNSTASH`'es them after `RET`.
+- Callee must balance its own `STASH/UNSTASH` pairs before `RET`.
+- Callee must not `UNSTASH` values it did not `STASH` in the same frame.
+- SSP must be at the same position on `RET` as it was on entry to the callee.
 
 SCRATCH (0x0006)
 ----------------
