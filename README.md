@@ -18,6 +18,9 @@ Memory Map
 0x0200 - 0xFFFF    Program       Code + .byte data (65024 bytes)
 ```
 
+<img width="1408" height="768" alt="drhwagdrhwagdrhw" src="https://github.com/user-attachments/assets/196d4c22-d444-40a9-ba51-3df642bc332e" />
+
+
 System Region
 -------------
 
