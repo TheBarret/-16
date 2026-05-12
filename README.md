@@ -205,13 +205,13 @@ Descriptor Table [0x0100 - 0x017F]
 0x017F    desc[63].addr_hi
 ```
 
-**Descriptor Symbols**
+**Format**
 ```asm
 .byte  <n> <values>    ;→ explicit data, n bytes filled
 .byte? <n>             ;→ empty buffer, n bytes zeroed
 ```
 
-**Descriptor Capacitance**
+**Examples**
 ```asm
 :stdin_buf  .byte? 64       ; stdio read buffer
 :stdout_buf .byte? 64       ; stdio write buffer
