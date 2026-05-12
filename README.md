@@ -189,10 +189,19 @@ Example, checking for any error:
 ```
 
 
-Shift Control Word (Slot 1 for SHF)
-------------------------------------
-| Bits    | Field     | Description                       |
-|---------|-----------|-----------------------------------|
-| 0–3     | Amount    | Shift steps (0–15)                |
-| 4       | Direction | 0 = left, 1 = right               |
-| 5–15    |           | Reserved                          |
+Shift Control Word
+------------------------------
+
+The shift operations takes operand from `R` (slot 2),
+and uses `B` (slot 1) as control bits.  
+
+```
+; assuming some operation result
+; followed by a bit shift on R
+
+:ctrl        .byte 2 0x01, 0x01 ; shift controller
+
+ADD          ; R = A + B
+SEL 1        ; point to B (shift control)
+LD  ctrl     ; load shift control 
+SHF          ; R = R << ctrl  (direct chain)
