@@ -213,9 +213,15 @@ Descriptor Table [0x0100 - 0x017F]
 
 **Examples**
 ```asm
-:stdin_buf  .byte? 64       ; stdio read buffer
-:stdout_buf .byte? 64       ; stdio write buffer
-:work_area  .byte? 256      ; general purpose
+; Initialized
+:message    .byte n, <bytes>   ; content: char data, n-length
+:font       .byte 16, <bytes>   ; content: pixel data, 8x8
+:sprite     .byte 32, <bytes>   ; content: pixel data, 16x16
+
+; Uninitialized
+:stdin_buf  .byte? 64           ; stdio read buffer
+:stdout_buf .byte? 64           ; stdio write buffer
+:work_area  .byte? 256          ; general purpose
 ```
 
 CHK Instruction
