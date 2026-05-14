@@ -15,7 +15,7 @@ A low-level computing concepts in a constrained, self-contained environment.
 - **Polymorphic operands**: Slot 1 (`B`) pulls double duty as an ALU operand *or* a shift control word.
 - **Host-driven I/O**: The VM doesn’t handle I/O directly—it polls flags set by the host (e.g., `RX`, `TX`, `ERR`).
 
----
+<img src="https://cdn.discordapp.com/attachments/272805431745839106/1503463658892562563/590631651-25e81972-2706-4d33-9714-779fee5ebb82.png?ex=6a0765a5&is=6a061425&hm=43ec9e927c4dd49118fd20022a210906d1bdbccba2fb6d64d813eda50a72b643" >
 
 ## **Memory Map**
 
